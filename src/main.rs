@@ -1,6 +1,8 @@
+#![allow(unused_imports)]
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    convert::TryInto,
 };
 
 const VALID_API_VERSIONS: std::ops::RangeInclusive<i16> = 0..=4;
@@ -9,8 +11,8 @@ const UNSUPPORTED_VERSION: i16 = 35;
 fn main() -> std::io::Result<()> {
     println!("Server starting...");
 
-    let listener = TcpListener::bind("127.0.0.1:9092")?;
-    println!("Listening on 127.0.0.1:9092");
+    let listener = TcpListener::bind("0.0.0.0:9092")?;
+    println!("Listening on 0.0.0.0:9092");
 
     for stream in listener.incoming() {
         match stream {
@@ -46,18 +48,19 @@ fn handle_client(stream: &mut TcpStream) -> std::io::Result<()> {
 
 fn parse_request(buffer: &[u8; 12]) -> (i32, i16, i32) {
     let length = i32::from_be_bytes(buffer[0..4].try_into().unwrap());
-    let request_api_version = i16::from_be_bytes(buffer[6..8].try_into().unwrap());
+    let request_api_version = i16::from_be_bytes(buffer[4..6].try_into().unwrap());
     let correlation_id = i32::from_be_bytes(buffer[8..12].try_into().unwrap());
     (length, request_api_version, correlation_id)
 }
 
 fn create_response(correlation_id: i32, error_code: i16) -> Vec<u8> {
-    let response_length = (4 + 4 + 2).to_be_bytes();
+    let response_length: i32 = 4 + 4 + 2; // Explicitly specify the type
+    let response_length_bytes = response_length.to_be_bytes();
     let correlation_id_bytes = correlation_id.to_be_bytes();
     let error_code_bytes = error_code.to_be_bytes();
 
     [
-        response_length.as_slice(),
+        response_length_bytes.as_slice(),
         correlation_id_bytes.as_slice(),
         error_code_bytes.as_slice(),
     ]
