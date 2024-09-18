@@ -3,8 +3,10 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 
-const SUPPORTED_VERSIONS: [i16; 5] = [0, 1, 2, 3, 4];
-const UNSUPPORTED_VERSION_ERROR_CODE: i16 = 35;
+const SUPPORTED_VERSIONS: [i16; 5] = [0, 1, 2, 3, 4]; 
+const API_VERSIONS_KEY: i16 = 18; 
+const UNSUPPORTED_VERSION_ERROR_CODE: i16 = 35; 
+const NO_ERROR_CODE: i16 = 0; 
 
 fn main() {
     println!("Server is running on port 9092...");
@@ -39,16 +41,32 @@ fn handle_client(stream: &mut TcpStream) {
     let mut response = vec![];
 
     if SUPPORTED_VERSIONS.contains(&api_version) {
-        let response_header = [0; 4];
-        response.extend_from_slice(&response_header);
-        response.extend_from_slice(&correlation_id);
+        let response_header = [0; 4]; 
+        let error_code = NO_ERROR_CODE.to_be_bytes();
+
+        let api_key = API_VERSIONS_KEY.to_be_bytes();
+        let min_version = 0_i16.to_be_bytes();
+        let max_version = 4_i16.to_be_bytes();
+
+        response.extend_from_slice(&response_header);        
+        response.extend_from_slice(&correlation_id);         
+        response.extend_from_slice(&error_code);             
+        response.extend_from_slice(&api_key);                
+        response.extend_from_slice(&min_version);            
+        response.extend_from_slice(&max_version);            
     } else {
-        let response_header = [0; 4];
+        let response_header = [0; 4]; 
         let error_code = UNSUPPORTED_VERSION_ERROR_CODE.to_be_bytes();
+
         response.extend_from_slice(&response_header);
         response.extend_from_slice(&correlation_id);
-        response.extend_from_slice(&error_code);
+        response.extend_from_slice(&error_code); 
     }
+
+    let message_length = (response.len() - 4) as u32;
+    let message_length_bytes = message_length.to_be_bytes();
+
+    response[0..4].copy_from_slice(&message_length_bytes);
 
     stream.write_all(&response).unwrap();
     stream.read_to_end(&mut rest).unwrap();
