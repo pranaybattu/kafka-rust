@@ -1,38 +1,65 @@
-#![allow(unused_imports)]
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
 };
 
-fn main() {
-    println!("Logs from your program will appear here!");
+const VALID_API_VERSIONS: std::ops::RangeInclusive<i16> = 0..=4;
+const UNSUPPORTED_VERSION: i16 = 35;
 
-    
-    let listener = TcpListener::bind("127.0.0.1:9092").unwrap();
-    
+fn main() -> std::io::Result<()> {
+    println!("Server starting...");
+
+    let listener = TcpListener::bind("127.0.0.1:9092")?;
+    println!("Listening on 127.0.0.1:9092");
+
     for stream in listener.incoming() {
         match stream {
-            Ok(mut _stream) => handle_client(&mut _stream),
-            Err(e) => {
-                println!("error: {}", e);
+            Ok(mut stream) => {
+                if let Err(e) = handle_client(&mut stream) {
+                    eprintln!("Error handling client: {}", e);
+                }
             }
+            Err(e) => eprintln!("Connection failed: {}", e),
         }
     }
+
+    Ok(())
 }
 
-fn handle_client(stream: &mut TcpStream) {
-    let mut length = [0; 4];
-    let mut request_api_key = [0; 2];
-    let mut request_api_version = [0; 2];
-    let mut correlation_id = [0; 4];
-    let mut rest = vec![];
-    stream.read_exact(&mut length).unwrap();
-    stream.read_exact(&mut request_api_key).unwrap();
-    stream.read_exact(&mut request_api_version).unwrap();
-    stream.read_exact(&mut correlation_id).unwrap();
-    let response_header = [0; 4];
-    let response = [response_header, correlation_id].concat();
+fn handle_client(stream: &mut TcpStream) -> std::io::Result<()> {
+    let mut buffer = [0; 12];
+    stream.read_exact(&mut buffer)?;
 
-    stream.write(&response).unwrap();
-    stream.read_to_end(&mut rest).unwrap();
+    let (_length, request_api_version, correlation_id) = parse_request(&buffer);
+
+    let error_code = if VALID_API_VERSIONS.contains(&request_api_version) {
+        0 // No error
+    } else {
+        UNSUPPORTED_VERSION
+    };
+
+    let response = create_response(correlation_id, error_code);
+    stream.write_all(&response)?;
+
+    Ok(())
+}
+
+fn parse_request(buffer: &[u8; 12]) -> (i32, i16, i32) {
+    let length = i32::from_be_bytes(buffer[0..4].try_into().unwrap());
+    let request_api_version = i16::from_be_bytes(buffer[6..8].try_into().unwrap());
+    let correlation_id = i32::from_be_bytes(buffer[8..12].try_into().unwrap());
+    (length, request_api_version, correlation_id)
+}
+
+fn create_response(correlation_id: i32, error_code: i16) -> Vec<u8> {
+    let response_length = (4 + 4 + 2).to_be_bytes();
+    let correlation_id_bytes = correlation_id.to_be_bytes();
+    let error_code_bytes = error_code.to_be_bytes();
+
+    [
+        response_length.as_slice(),
+        correlation_id_bytes.as_slice(),
+        error_code_bytes.as_slice(),
+    ]
+    .concat()
 }
